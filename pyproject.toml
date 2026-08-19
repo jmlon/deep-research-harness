@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deep-research-harness"
+version = "0.1.0"
+description = "Deep research CLI harness built on Pydantic AI capabilities"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+# Every dependency carries an upper bound. This ships via `pipx install`, which resolves from
+# these ranges and never reads uv.lock, so a floor-only pin means end users silently get
+# whatever released most recently — versions this code has never run against. That had already
+# happened: `rich>=14` was resolving 15 and `logfire>=3.14.1` was resolving 4, each a major
+# version past anything tested, with nothing to notice.
+#
+# Bounds are set at the next breaking version, not pinned exactly: an installed tool that
+# demands one exact version conflicts with everything else in a shared environment and blocks
+# security fixes. `pydantic-ai-harness` is 0.x, where the *minor* is the breaking position, so
+# its bound is <0.22 rather than <1.
+dependencies = [
+    "pydantic>=2.11,<3",
+    "pydantic-ai>=2.31.0,<3",
+    "pydantic-ai-harness>=0.21.0,<0.22",
+    "pydantic-ai-slim[duckduckgo,web-fetch]>=2.31.0,<3",
+    "pyyaml>=6.0.3,<7",
+    "python-dotenv>=1.1.0,<2",
+    "rich>=14.0.0,<16",
+    "logfire>=4.0,<5",
+]
+
+[project.optional-dependencies]
+# Bundled MCP tool sources for the `in_memory` transport (PRD §4a, §5b). Extras rather than hard
+# dependencies: each server drags its own transitive tree (`fastmcp`, `pyzotero`, ...) that a
+# web-only researcher has no use for, and a server release should not force a harness release for
+# people not using it.
+#
+# A server named here is discovered at run time through the `deep_research.mcp_servers` entry-point
+# group, not imported by name — nothing in this package imports `zotero_mcp`.
+#
+# Published on PyPI as `pydantic-zotero-mcp` (module: `zotero_mcp`), so both install forms resolve:
+#   pipx install "deep-research-harness[zotero]"
+#   pipx inject deep-research-harness pydantic-zotero-mcp
+zotero = ["pydantic-zotero-mcp>=0.1.1,<0.2"]
+
+[project.scripts]
+deep-research = "deep_research.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jmlon/deep-research-harness"
+Repository = "https://github.com/jmlon/deep-research-harness"
+Issues = "https://github.com/jmlon/deep-research-harness/issues"
+
+[dependency-groups]
+# Dev tools are not shipped, so the upper-bound rule that governs `dependencies` above
+# does not apply here: a lint or test tool that moves is a local annoyance, not an
+# untested version reaching an end user.
+dev = [
+    "pytest>=8.3.4",
+    "packaging>=24",  # tests/test_dependencies.py parses the declared ranges
+    "ruff>=0.16.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["deep_research"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Every test runs offline against TestModel/FunctionModel. A test that reaches the network
+# is a bug in the test, not a slow test - see tests/conftest.py.
+filterwarnings = [
+    # TestModel/FunctionModel have no pricing data, so every offline run warns that a USD
+    # ceiling can't be enforced. That's an artifact of the fake model, not a finding.
+    "ignore::pydantic_ai.usage.CostNotFoundWarning",
+]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+# The house style predates any format config: existing modules wrap near 110 rather than the
+# 88-column default, so leaving this unset made `ruff format` want to rewrite every file. Set
+# to what the code already does, so formatting a new module matches its neighbours.
+line-length = 110
+
+# `deep_research` is this project's own package. Without this, ruff's isort treats it as
+# third-party and demands it be sorted in among the `pydantic_ai` imports, scrambling the
+# stdlib / library / first-party grouping in every test module.
+src = ["."]

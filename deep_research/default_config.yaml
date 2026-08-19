@@ -1,0 +1,165 @@
+# Deep Research harness configuration — see PRD.md §13.
+#
+# This is the tool's *bundled* default config, used only when no `config.yaml` exists in your
+# project folder (the directory you run `deep-research` from). Run `deep-research init` in your
+# project folder to copy this file there so you can customize it — see README.md.
+
+# Any Pydantic AI model string, "<provider>:<model-name>" — nothing here is provider-specific,
+# and the three roles don't have to share a provider. Set the API key for whichever provider you
+# name (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...); the tool checks it can resolve every model
+# before it starts work, so a missing key fails immediately rather than mid-run.
+#
+# To run against a different provider without editing this file:
+#   DEEP_RESEARCH_MODEL=openai:gpt-5-mini deep-research run "..."
+# or per role: DEEP_RESEARCH_MODEL_LEAD / _RESEARCHER / _CRITIC.
+model:
+  lead: "anthropic:claude-fable-5"       # scoping, gap-check, and synthesis agent
+  researcher: "anthropic:claude-fable-5" # per-sub-question worker agent (Researcher() capability)
+  critic: "anthropic:claude-fable-5"     # reviews the draft report; a smaller/cheaper model is fine
+
+# Fallback prices, used ONLY where Pydantic AI's pricing data (the genai-prices package) has no
+# entry for a model — which is common for models released recently, and for provider-prefixed
+# names such as OpenRouter's even when the underlying model is priced under its native provider.
+#
+# Without a price, `budgets.spend_limit_usd` cannot be enforced and the run warns
+# (CostNotFoundWarning); only the token and request ceilings hold. Add the model's published
+# rates here and the USD ceilings work again, with the figure reported as an estimate.
+#
+# Keys must match the model strings in `model:` exactly. A measured price always wins, so an
+# entry for a model genai-prices does know is simply ignored.
+prices:
+  "openrouter:openai/gpt-5.6-luna":
+    input_usd_per_1m: 0.20
+    output_usd_per_1m: 1.20
+  "openrouter:google/gemini-3.6-flash":
+      input_usd_per_1m: 0.75
+      output_usd_per_1m: 3.75
+  "openrouter:google/gemini-3.7-flash":
+      input_usd_per_1m: 0.375
+      output_usd_per_1m: 1.875
+
+
+search:
+  # v1 only supports the Researcher() default: the provider's native web search/fetch where the
+  # model supports it, and a local DuckDuckGo/markdownify fallback where it doesn't. Which one
+  # you get is decided per provider by Pydantic AI, not here. Swappable backends (e.g. Exa) are
+  # a post-v1 extension — see PRD §12.
+  backend: "duckduckgo"
+
+# Additional MCP-backed tool sources for the WORKER agent, beyond WebSearch/WebFetch (PRD §5b).
+# Empty by default: a fresh install researches the web only, and nothing is enabled without you
+# asking for it. Uncomment one of the three forms below.
+#
+# Three transports, differing in where the server runs and therefore in what you configure:
+#
+#   in_memory  A server installed into this tool's own environment, imported and run inside this
+#              process. Nothing to launch, no paths to get wrong — but no isolation either.
+#   stdio      A subprocess this tool launches. The whole server description lives here.
+#   http       A remote server. NOTE: your research question and any content retrieved leave
+#              this machine — a privacy decision, not just a config one.
+#
+# Keys common to all: name, transport, optional, timeout_seconds, allowed_tools, health_check,
+# tool_args, instructions. Transport-specific keys are validated per transport, so a `command:`
+# left behind on a server you switched to `in_memory` is a startup error rather than a line that
+# silently does nothing.
+mcp_servers: []
+
+# (1) IN-MEMORY — the server runs inside this process. Install it into this tool's environment:
+#       pipx install "deep-research-harness[zotero]"
+#     (or into an existing install: pipx inject deep-research-harness pydantic-zotero-mcp)
+# - name: "zotero"              # also selects which bundled server to load
+#   transport: "in_memory"
+#   health_check: "get_library_info"   # one cheap read, called at startup to prove it works.
+#                                      # Listing tools is not proof: zotero-mcp accepts a
+#                                      # rejected API key at startup by design.
+#   allowed_tools:              # omit to expose everything the server offers
+#     - search_items
+#     - get_item
+#     - get_item_fulltext
+#     - get_item_notes
+#     - list_collections
+#   tool_args:                  # merged into every matching call, and they WIN over whatever the
+#     search_items:             # model passed — a cap the model can raise is not a cap
+#       limit: 10
+#     get_item_fulltext:
+#       max_chars: 20000        # the server's own default is 100,000 chars (~25-30k TOKENS for
+#                               # ONE call). Leave this unset and a few full-text reads are your
+#                               # whole token budget.
+#   instructions: |             # what this source is for, and when to prefer it
+#     A curated Zotero library of peer-reviewed literature is available. Prefer it over web
+#     search for published academic work, and cite items by their Zotero key. Fall back to the
+#     web for recent, non-academic, or fast-moving material the library will not hold.
+#
+# Credentials come from your project's .env, the same as your model API keys:
+#   ZOTERO_API_KEY=...
+#   ZOTERO_LIBRARY_ID=123456
+
+# (2) LOCAL PROCESS — a stdio subprocess, for a server you have checked out locally or whose
+#     version you want to control independently of this tool's install.
+# - name: "zotero"
+#   transport: "stdio"
+#   command: ["uv", "run", "python", "-m", "zotero_mcp"]
+#   cwd: "../pydantic-zotero-mcp"  # relative to YOUR PROJECT FOLDER, never the install location
+#   env:                        # ${VAR} references only — never paste a secret into this file
+#     ZOTERO_API_KEY: "${ZOTERO_API_KEY}"
+#     ZOTERO_LIBRARY_ID: "${ZOTERO_LIBRARY_ID}"
+#   health_check: "get_library_info"
+
+# (3) EXTERNAL — a streamable-HTTP server on another host.
+# - name: "internal-docs"
+#   transport: "http"
+#   url: "https://mcp.internal.example/mcp"
+#   auth_token_env: "INTERNAL_DOCS_TOKEN"   # the env var NAME, never the token itself
+#   optional: true              # false (default) means a server that can't start aborts the run,
+#                               # because a report that silently fell back to web-only looks
+#                               # complete and isn't
+
+# Per-run overrides, without editing this file:
+#   deep-research run "..." --mcp-args '{"zotero": {"search_items": {"collection_key": "XY99ABCD"}}}'
+
+budgets:
+  # Enforced in code (deterministic), not left to model judgment — see PRD §8.
+  breadth_budget: 8      # max total sub-questions across all rounds (initial + follow-ups)
+  depth_budget: 2        # max follow-up rounds after the initial pass
+  worker_concurrency: 4  # max sub-questions researched in parallel
+  # Ceiling on RESEARCH for the whole run, in USD — every worker and gap-check accumulates
+  # against this one budget, and research stops when it's spent.
+  spend_limit_usd: 5.0
+  # Same, in tokens: the ceiling that applies when Pydantic AI has no pricing data for your
+  # model and the USD limit therefore can't be enforced. Sized from measured runs: a worker
+  # that fetches a few pages costs roughly 100k tokens, so a default breadth of 8 needs
+  # headroom well past that. Both ceilings are soft, not hard — a run can overshoot by roughly
+  # worker_concurrency; see the note in research.py's RunBudget.
+  total_tokens_limit: 1500000
+  # Ceiling on the NUMBER of model requests research may make. This is usually the ceiling that
+  # actually stops a run, because one sub-question is not one request: the worker takes several
+  # turns and delegates to a researcher that takes several more. Budget roughly:
+  #
+  #   requests ≈ 1 (scoping)
+  #            + breadth_budget × ~8 (worker turns + its researcher's turns)
+  #            + (depth_budget + 1) (gap checks)
+  #
+  # So the default breadth of 8 needs ~70 with no headroom; 300 leaves room for pages that need
+  # several fetches, while still bounding a runaway loop. Raise it if a run stops with
+  # "would exceed the request_limit" while tokens and USD are still unspent.
+  request_limit: 300
+
+  # Guaranteed allowance for writing and critiquing the report, granted ON TOP of whatever
+  # research actually cost — not carved out of the ceilings above. This is what stops a run
+  # from spending its whole research budget and then having nothing left to produce a report
+  # with, which is the one failure mode where you pay in full and get nothing back. Raise the
+  # one the run names if it reports that the allowance wasn't enough to write the report.
+  report_token_allowance: 250000
+  report_spend_allowance_usd: 1.0
+  report_request_allowance: 30
+
+output:
+  # Both resolved relative to your project folder (the directory you run `deep-research` from),
+  # never to the tool's install location. Override with any path, absolute or relative.
+  report_dir: "reports"
+  # ResearchState checkpoints (PRD §7) — internal bookkeeping, not a report format (§7a), but kept
+  # after a run finishes as an audit trail and to allow `deep-research resume <state-file>`.
+  state_dir: ".deep_research"
+
+logging:
+  logfire: true
