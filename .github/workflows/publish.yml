@@ -9,7 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      # astral-sh/setup-uv publishes only exact version tags — there is no floating `v10` major
+      # alias (unlike actions/*), so this must name a full version.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.12"
       - name: Run tests
