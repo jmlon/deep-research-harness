@@ -569,6 +569,7 @@ zotero = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastmcp" },
     { name = "packaging" },
     { name = "pytest" },
     { name = "ruff" },
@@ -590,6 +591,7 @@ provides-extras = ["zotero"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastmcp", specifier = ">=3.4.7,<4" },
     { name = "packaging", specifier = ">=24" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "ruff", specifier = ">=0.16.3" },
