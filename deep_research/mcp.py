@@ -203,6 +203,12 @@ def build_toolset(
         # server's error text (Zotero PRD §7.7) exists precisely so the model can act on it.
         # A genuinely dead server still fails every retry and is still contained by §8.
         tool_error_behavior="retry",
+        # 'retry' is defeated without this: the agent-level default allows ONE retry per tool, so
+        # the model got a single shot at acting on a corrective message like "`parent_key` must be
+        # an 8-character Zotero key" — a second mistake on the same tool raised
+        # UnexpectedModelBehavior, killing the whole worker attempt, and `_research_one` then
+        # re-ran the sub-question from scratch. A real run burned its entire budget this way.
+        max_retries=cfg.max_tool_retries,
     )
     return toolset
 

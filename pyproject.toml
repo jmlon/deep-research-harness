@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "deep-research-harness"
-version = "0.1.0"
+version = "0.1.1"
 description = "Deep research CLI harness built on Pydantic AI capabilities"
 readme = "README.md"
 license = "MIT"

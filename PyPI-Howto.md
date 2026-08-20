@@ -14,14 +14,24 @@ Your one manual step — register the trusted publisher on PyPI (requires your l
 
 Then to release 0.1.0:
 
+```sh
 cd ~/GIT/deep-research-harness
 git tag v0.1.0
 git push origin v0.1.0
+```
 
 ## Deploying new releases
 
+```sh
 uv version --bump patch
 uv version --bump minor
 git commit,
 git tag v<new-version>
 git push && git push origin v<new-version>
+```
+
+## Updating on the deployed machine
+
+```sh
+pipx upgrade deep-research-harness
+```

@@ -257,8 +257,8 @@ model:
 
 prices:
   "openrouter:openai/gpt-5.6-luna":
-    input_usd_per_1m: 1.25     # copy both numbers straight off the provider's pricing page
-    output_usd_per_1m: 10.0
+    input_usd_per_1m: 0.20        # copy both numbers straight off the provider's pricing page
+    output_usd_per_1m: 1.20
 ```
 
 With that in place `spend_limit_usd` and `report_spend_allowance_usd` are enforced again, and the
@@ -396,8 +396,10 @@ bibliographic report that silently fell back to web-only looks complete and isn'
 recorded in the report's assumptions.
 
 A tool call that fails *during* a run is handed back to the model to self-correct (servers like
-`zotero-mcp` write their errors for exactly that), and a worker that still can't proceed is
-contained the way a failed fetch already is.
+`zotero-mcp` write their errors for exactly that). `max_tool_retries` (default 3) is how many
+consecutive corrections the model gets on one tool before its attempt is abandoned — the counter
+resets on a successful call. A worker that still can't proceed is contained the way a failed
+fetch already is.
 
 #### Citations from a tool source
 

@@ -152,6 +152,15 @@ class McpServerConfig(StrictModel):
         "and record the degradation in the report's assumptions.",
     )
     timeout_seconds: float = Field(default=60.0, gt=0, description="Per-tool-call timeout.")
+    max_tool_retries: int = Field(
+        default=3,
+        ge=1,
+        description="How many times the model may retry ONE tool after a validation error the "
+        "server hands back (Pydantic AI's ModelRetry). The library default of 1 gives the model a "
+        "single shot at acting on the server's corrective message; a second mistake on the same "
+        "tool kills the whole worker run — which real Zotero runs hit constantly. The counter "
+        "resets on a successful call, so this bounds consecutive failures, not total use.",
+    )
     allowed_tools: list[str] | None = Field(
         default=None,
         description="Allowlist applied after the server's tool list is fetched. None exposes every "

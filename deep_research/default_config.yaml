@@ -13,9 +13,16 @@
 #   DEEP_RESEARCH_MODEL=openai:gpt-5-mini deep-research run "..."
 # or per role: DEEP_RESEARCH_MODEL_LEAD / _RESEARCHER / _CRITIC.
 model:
-  lead: "anthropic:claude-fable-5"       # scoping, gap-check, and synthesis agent
-  researcher: "anthropic:claude-fable-5" # per-sub-question worker agent (Researcher() capability)
-  critic: "anthropic:claude-fable-5"     # reviews the draft report; a smaller/cheaper model is fine
+  # lead: "anthropic:claude-fable-5"       # scoping, gap-check, and synthesis agent
+  # researcher: "anthropic:claude-fable-5" # per-sub-question worker agent (Researcher() capability)
+  # critic: "anthropic:claude-fable-5"     # reviews the draft report; a smaller/cheaper model is fine
+  # lead: "openrouter:z-ai/glm-5.2"
+  # researcher: "openrouter:z-ai/glm-5.2"
+  # critic: "openrouter:deepseek/deepseek-v4-flash-0731"
+  lead: "openrouter:openai/gpt-5.6-luna"
+  researcher: "openrouter:openai/gpt-5.6-luna"
+  critic: "openrouter:openai/gpt-5.6-luna"
+
 
 # Fallback prices, used ONLY where Pydantic AI's pricing data (the genai-prices package) has no
 # entry for a model — which is common for models released recently, and for provider-prefixed
@@ -31,12 +38,63 @@ prices:
   "openrouter:openai/gpt-5.6-luna":
     input_usd_per_1m: 0.20
     output_usd_per_1m: 1.20
-  "openrouter:google/gemini-3.6-flash":
-      input_usd_per_1m: 0.75
-      output_usd_per_1m: 3.75
+  "openrouter:openai/gpt-5.6-terra:batch":
+      input_usd_per_1m: 1.00
+      output_usd_per_1m: 6.00
+  "openrouter:google/google/gemma-4-31b-it":
+      input_usd_per_1m: 0.08
+      output_usd_per_1m: 0.35
   "openrouter:google/gemini-3.7-flash":
       input_usd_per_1m: 0.375
       output_usd_per_1m: 1.875
+  "openrouter:google/gemini-3.6-flash":
+      input_usd_per_1m: 0.75
+      output_usd_per_1m: 3.75
+  "openrouter:z-ai/glm-5.2":
+      input_usd_per_1m: 0.21
+      output_usd_per_1m: 0.66
+  "openrouter:z-ai/glm-5.3":
+      input_usd_per_1m: 1.40
+      output_usd_per_1m: 4.40
+  "openrouter:moonshotai/kimi-k2.6":
+      input_usd_per_1m: 0.5493
+      output_usd_per_1m: 2.313
+  "openrouter:moonshotai/kimi-k3":
+      input_usd_per_1m: 2.60
+      output_usd_per_1m: 13.00
+  "openrouter:qwen/qwen3.7-flash":
+      input_usd_per_1m: 0.03
+      output_usd_per_1m: 0.13
+  "openrouter:qwen/qwen3.7-plus":
+      input_usd_per_1m: 0.32
+      output_usd_per_1m: 1.28
+  "openrouter:qwen/qwen3.7-plus":
+      input_usd_per_1m: 0.32
+      output_usd_per_1m: 1.28
+  "openrouter:qwen/qwen3.8-27b":
+      input_usd_per_1m: 0.40
+      output_usd_per_1m: 3.00
+  "openrouter:qwen/qwen3.7-max":
+      input_usd_per_1m: 1.475
+      output_usd_per_1m: 4.425
+  "openrouter:qwen/qwen3.8-max":
+      input_usd_per_1m: 2.00
+      output_usd_per_1m: 6.00
+  "openrouter:deepseek/deepseek-v4-flash-0731":
+      input_usd_per_1m: 0.065
+      output_usd_per_1m: 0.14
+  "openrouter:deepseek/deepseek-v4-pro":
+      input_usd_per_1m: 0.66
+      output_usd_per_1m: 1.98
+  "openrouter:deepseek/deepseek-v4-pro-0813":
+      input_usd_per_1m: 0.6026
+      output_usd_per_1m: 1.808
+  "openrouter:xiaomi/mimo-v2.5-pro":
+      input_usd_per_1m: 0.3045
+      output_usd_per_1m: 0.609
+  "openrouter:minimax/minimax-m3":
+      input_usd_per_1m: 0.23
+      output_usd_per_1m: 0.96
 
 
 search:
@@ -58,10 +116,10 @@ search:
 #   http       A remote server. NOTE: your research question and any content retrieved leave
 #              this machine — a privacy decision, not just a config one.
 #
-# Keys common to all: name, transport, optional, timeout_seconds, allowed_tools, health_check,
-# tool_args, instructions. Transport-specific keys are validated per transport, so a `command:`
-# left behind on a server you switched to `in_memory` is a startup error rather than a line that
-# silently does nothing.
+# Keys common to all: name, transport, optional, timeout_seconds, max_tool_retries,
+# allowed_tools, health_check, tool_args, instructions. Transport-specific keys are validated per
+# transport, so a `command:` left behind on a server you switched to `in_memory` is a startup
+# error rather than a line that silently does nothing.
 mcp_servers: []
 
 # (1) IN-MEMORY — the server runs inside this process. Install it into this tool's environment:
@@ -72,6 +130,10 @@ mcp_servers: []
 #   health_check: "get_library_info"   # one cheap read, called at startup to prove it works.
 #                                      # Listing tools is not proof: zotero-mcp accepts a
 #                                      # rejected API key at startup by design.
+#   max_tool_retries: 3         # consecutive retries the model gets on ONE tool after a
+#                               # validation error (e.g. a malformed Zotero key) before the
+#                               # worker attempt is abandoned. Default 3; raise it if a server's
+#                               # arguments take the model several corrections to get right.
 #   allowed_tools:              # omit to expose everything the server offers
 #     - search_items
 #     - get_item

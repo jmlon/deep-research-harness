@@ -89,6 +89,28 @@ def test_bundled_default_config_has_no_servers() -> None:
     assert load_config().mcp_servers == []
 
 
+# --- tool retries: the model must get room to act on a server's corrective errors -------------
+
+
+def test_max_tool_retries_reaches_the_toolset(tmp_path: Path) -> None:
+    """`tool_error_behavior='retry'` is defeated without this: the agent-level default allows ONE
+    retry per tool, so a second malformed argument on the same tool killed the whole worker
+    attempt — which a real Zotero run hit until its entire budget was gone.
+    """
+    toolset = build_toolset(server(max_tool_retries=5), tmp_path)
+    assert toolset.max_retries == 5
+
+
+def test_max_tool_retries_defaults_above_the_library_default(tmp_path: Path) -> None:
+    toolset = build_toolset(server(), tmp_path)
+    assert toolset.max_retries == 3
+
+
+def test_max_tool_retries_must_allow_at_least_one_retry() -> None:
+    with pytest.raises(ValidationError):
+        server(max_tool_retries=0)
+
+
 # --- secrets are referenced, never stored (PRD §13) -------------------------------------------
 
 
