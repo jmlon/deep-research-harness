@@ -13,12 +13,9 @@
 #   DEEP_RESEARCH_MODEL=openai:gpt-5-mini deep-research run "..."
 # or per role: DEEP_RESEARCH_MODEL_LEAD / _RESEARCHER / _CRITIC.
 model:
-  # lead: "anthropic:claude-fable-5"       # scoping, gap-check, and synthesis agent
-  # researcher: "anthropic:claude-fable-5" # per-sub-question worker agent (Researcher() capability)
-  # critic: "anthropic:claude-fable-5"     # reviews the draft report; a smaller/cheaper model is fine
-  # lead: "openrouter:z-ai/glm-5.2"
-  # researcher: "openrouter:z-ai/glm-5.2"
-  # critic: "openrouter:deepseek/deepseek-v4-flash-0731"
+  #lead: "anthropic:claude-fable-5"       # scoping, gap-check, and synthesis agent                   -- May use weaker model
+  #researcher: "anthropic:claude-fable-5" # per-sub-question worker agent (Researcher() capability)   -- Needs stronger model
+  #critic: "anthropic:claude-fable-5"     # reviews the draft report; a smaller/cheaper model is fine -- May use weaker model
   lead: "openrouter:openai/gpt-5.6-luna"
   researcher: "openrouter:openai/gpt-5.6-luna"
   critic: "openrouter:openai/gpt-5.6-luna"
@@ -50,7 +47,7 @@ prices:
   "openrouter:google/gemini-3.6-flash":
       input_usd_per_1m: 0.75
       output_usd_per_1m: 3.75
-  "openrouter:z-ai/glm-5.2":
+  "openrouter:z-ai/glm-5.2":    # Not good for researcher
       input_usd_per_1m: 0.21
       output_usd_per_1m: 0.66
   "openrouter:z-ai/glm-5.3":

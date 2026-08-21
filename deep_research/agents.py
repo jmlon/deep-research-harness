@@ -159,6 +159,16 @@ researched but came back too thin or too contradictory to answer.
 Produce the final ResearchReport.
 """
 
+WORKER_RETRIES = {"tools": 3, "output": 2}
+"""Retry budgets for the worker's built-in tools and its structured output.
+
+Pydantic AI defaults both to 1, and real runs died on each: two consecutive paywalled fetches
+killed a worker with "Tool 'web_fetch' exceeded max retries count of 1" (a 403 is routine web
+reality, not a reason to abandon a sub-question), and a weaker model producing one malformed
+SubFinding died with "Exceeded maximum output retries (1)". MCP tools are unaffected — each
+server's `max_tool_retries` config (default 3) overrides this agent-level default.
+"""
+
 CRITIQUE_PROMPT_TEMPLATE = """\
 Original research question: {question}
 
@@ -209,6 +219,7 @@ def build_worker_agent(
         capabilities=[Researcher(instructions=None)],
         toolsets=list(toolsets or ()),
         output_type=SubFinding,
+        retries=WORKER_RETRIES,
         defer_model_check=True,
     )
 
