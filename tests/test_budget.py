@@ -253,3 +253,34 @@ def test_no_configured_prices_means_no_estimated_enforcement() -> None:
     budget = RunBudget(usage=RunUsage(input_tokens=9_000_000), _configured_spend_limit_usd=Decimal("0.01"))
     budget.enforce_configured_spend(report=False)
     assert budget.spent_usd() == 0.0
+
+
+def test_cost_warning_is_quieted_only_when_config_prices_cover_every_role() -> None:
+    """Pydantic AI warns that its `cost_limit` can't be enforced whenever genai-prices lacks a
+    model — but with a `prices:` entry the harness enforces the USD ceilings itself, so for a
+    fully covered run the warning tells the operator to fix what is already handled. With a
+    partially covered run it is still doing its job and must survive.
+    """
+    import warnings
+
+    from deep_research.research import _quiet_cost_warning_when_config_prices_cover_the_run
+
+    price = ModelPrice(input_usd_per_1m=1.0, output_usd_per_1m=2.0)
+
+    def config_with_prices(*priced: str) -> AppConfig:
+        return AppConfig.model_validate(
+            {
+                "model": {"lead": "p:lead", "researcher": "p:worker", "critic": "p:critic"},
+                "prices": {m: price.model_dump() for m in priced},
+            }
+        )
+
+    with warnings.catch_warnings():
+        warnings.resetwarnings()
+        _quiet_cost_warning_when_config_prices_cover_the_run(config_with_prices("p:lead", "p:worker"))
+        assert not warnings.filters, "a partially covered run must keep the warning"
+
+        _quiet_cost_warning_when_config_prices_cover_the_run(
+            config_with_prices("p:lead", "p:worker", "p:critic")
+        )
+        assert warnings.filters, "a fully covered run silences pure noise"

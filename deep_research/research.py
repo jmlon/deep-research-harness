@@ -14,6 +14,7 @@ per PRD §10: "bounded by depth_budget so critique can't loop forever."
 from __future__ import annotations
 
 import asyncio
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -22,7 +23,7 @@ from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.usage import RunUsage, UsageLimits
+from pydantic_ai.usage import CostNotFoundWarning, RunUsage, UsageLimits
 from rich.console import Console
 
 from deep_research.agents import (
@@ -533,6 +534,23 @@ def _fit_follow_ups(state: ResearchState, proposed: list[str]) -> list[str]:
     return candidates[:remaining_slots]
 
 
+def _quiet_cost_warning_when_config_prices_cover_the_run(config: AppConfig) -> None:
+    """Silence Pydantic AI's `CostNotFoundWarning` when `config.prices` covers every role's model.
+
+    That warning means Pydantic AI's own `cost_limit` can't be enforced because `genai-prices`
+    has no data for a model — which is exactly the situation `config.prices` exists for: the
+    harness charges every call at the configured rates and enforces the USD ceilings itself
+    (`RunBudget.charge` / `enforce_configured_spend`). With an entry for every role, the warning
+    tells the operator to fix something that is already handled, once per run, mid-output.
+
+    Suppressed only when *all three* roles are covered: with a partially filled `prices:` block
+    the warning is still doing its job for the uncovered model, so it stays.
+    """
+    roles = (config.model.lead, config.model.researcher, config.model.critic)
+    if all(model in config.prices for model in roles):
+        warnings.filterwarnings("ignore", category=CostNotFoundWarning)
+
+
 async def run_research_pipeline(
     worker_agent: Agent[None, SubFinding],
     gap_check_agent: Agent[None, GapCheckResult],
@@ -560,6 +578,7 @@ async def run_research_pipeline(
     "lose at most one round of cheap LLM judgment, never re-do finished research" tradeoff.
     """
     budget = budget if budget is not None else RunBudget.from_config(config)
+    _quiet_cost_warning_when_config_prices_cover_the_run(config)
 
     while state.open_subquestions and state.status != "done":
         remaining_slots = max(0, state.brief.breadth_budget - len(state.findings))

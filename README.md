@@ -179,6 +179,9 @@ A finished run can also be re-written without re-paying for its research:
 `deep-research resume --force <state-file>` re-runs synthesis and critique on the findings
 already checkpointed — see "Resuming an interrupted run" below.
 
+`deep-research resume .deep_research/<log_file>.json --breadth-budget 12 --breadth-budget 12` : Re-execute research 
+of questions that were dropped after the budget was exhausted.
+
 
 #### Budgets: where they live and how to size them
 

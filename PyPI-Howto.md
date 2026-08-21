@@ -25,7 +25,7 @@ git push origin v0.1.0
 ```sh
 uv version --bump patch
 uv version --bump minor
-git commit,
+git commit
 git tag v<new-version>
 git push && git push origin v<new-version>
 ```
@@ -34,4 +34,10 @@ git push && git push origin v<new-version>
 
 ```sh
 pipx upgrade deep-research-harness
+# To avoid local cache issues
+pipx upgrade --pip-args="--no-cache-dir" deep-research-harness
 ```
+
+
+---
+
