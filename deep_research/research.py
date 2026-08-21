@@ -410,10 +410,21 @@ async def run_gap_check(
 
 
 async def run_synthesis(
-    synthesis_agent: Agent[None, ResearchReport], state: ResearchState, config: AppConfig, budget: RunBudget
+    synthesis_agent: Agent[None, ResearchReport],
+    state: ResearchState,
+    config: AppConfig,
+    budget: RunBudget,
+    critic_issues: list[str] | None = None,
 ) -> ResearchReport:
-    prompt = render_synthesis_prompt(state)
-    with span(config, "synthesize", round=state.round, findings_count=len(state.findings)):
+    """Write (or rewrite) the report. `critic_issues` carries a failed critique into the prompt."""
+    prompt = render_synthesis_prompt(state, critic_issues or ())
+    with span(
+        config,
+        "synthesize",
+        round=state.round,
+        findings_count=len(state.findings),
+        revision=bool(critic_issues),
+    ):
         result = await _run_metered(
             synthesis_agent, prompt, budget=budget, model=config.model.lead,
             limits=budget.report_limits, report=True,
@@ -437,6 +448,20 @@ async def run_critique(
         sp.set_attributes({"passed": result.output.passed, "issue_count": len(result.output.issues)})
         return result.output
 
+
+MAX_REPORT_REVISIONS = 2
+"""Rewrite-only passes the critic loop may spend on writing problems (PRD §10 item 2).
+
+The critic distinguishes issues that need more research (it proposes follow-ups) from issues
+with the writing itself (it doesn't — "more research can't fix a writing problem"). The loop
+below researches the former, but for the latter its only remedy used to be shipping as-is: a
+real run shipped a 4KB draft that ignored most of its 8 findings because the critic's 5 issues
+were all writing problems. A rewrite pass — re-running synthesis with the critic's issues in
+the prompt — is what actually fixes those. Bounded, because a synthesis model and a critic
+model can genuinely disagree, and ping-ponging drafts between them burns the report allowance
+without converging; after this many rewrites the draft ships with the critic's issues noted,
+same as before.
+"""
 
 UNVERIFIED_NOTE = (
     "The report was not independently reviewed: the run's budget was spent before the critic "
@@ -607,42 +632,54 @@ async def run_research_pipeline(
     state.critic_passed = verdict.passed
     state.save(state_path)
 
+    revisions_left = MAX_REPORT_REVISIONS
     while not verdict.passed and not out_of_budget:
         console.print(f"[yellow]Critic found issues:[/] {'; '.join(verdict.issues)}")
 
-        if budget_exhausted(state):
-            console.print("[dim]Budget exhausted — shipping the report with the critic's issues noted.[/]")
-            # The critic named research that would have fixed its issues and we can't afford it.
-            # Record it before breaking, so the report names the specific gap rather than only
-            # the complaint about it.
+        follow_ups = _fit_follow_ups(state, verdict.follow_up_subquestions) if not budget_exhausted(state) else []
+        if follow_ups:
+            state.round += 1
+            state.status = "researching"
+            state.open_subquestions = follow_ups
+            state.save(state_path)
+
+            findings, failed = await research_round(
+                worker_agent, follow_ups, state, config, budget, console, sources
+            )
+            state.findings.update(findings)
+            _record_unresolved(state, failed)
+            _clear_resolved(state)
+            state.open_subquestions = []
+            state.save(state_path)
+            console.print("[bold]Re-synthesizing report...[/]")
+        elif revisions_left > 0:
+            # Nothing to research — the issues are with the writing, or the budget can't afford
+            # more research. Either way a rewrite against the critic's issues is still cheap
+            # (report allowance, not research budget) and is the only remedy that can help.
+            if budget_exhausted(state):
+                # Record what the critic wanted researched and couldn't be, so the report names
+                # the specific gap rather than only the complaint about it.
+                _record_unresolved(state, verdict.follow_up_subquestions)
+            revisions_left -= 1
+            state.save(state_path)
+            console.print("[bold]Revising the report against the critic's issues...[/]")
+        else:
+            console.print(
+                f"[dim]Critic still unsatisfied after {MAX_REPORT_REVISIONS} revision(s) — "
+                f"shipping with its issues noted.[/]"
+            )
             _record_unresolved(state, verdict.follow_up_subquestions)
             state.save(state_path)
             break
 
-        follow_ups = _fit_follow_ups(state, verdict.follow_up_subquestions)
-        if not follow_ups:
-            console.print("[dim]No researchable follow-up for these issues — shipping as-is.[/]")
-            state.save(state_path)
-            break
-
-        state.round += 1
-        state.status = "researching"
-        state.open_subquestions = follow_ups
-        state.save(state_path)
-
-        findings, failed = await research_round(worker_agent, follow_ups, state, config, budget, console, sources)
-        state.findings.update(findings)
-        _record_unresolved(state, failed)
-        _clear_resolved(state)
-        state.open_subquestions = []
-        state.save(state_path)
-
-        console.print("[bold]Re-synthesizing report...[/]")
         state.status = "synthesizing"
         state.save(state_path)
         budget.open_report_allowance()
         try:
-            report = await run_synthesis(synthesis_agent, state, config, budget)
+            # The failed critique feeds the rewrite on both paths: after a research round it
+            # says what the previous draft got wrong; on a pure revision it is the entire
+            # reason synthesis is running again.
+            report = await run_synthesis(synthesis_agent, state, config, budget, critic_issues=verdict.issues)
         except UsageLimitExceeded as exc:
             # Keep the previous draft rather than losing the run: it's a report built from
             # fewer findings, which is exactly what `unresolved` is for.

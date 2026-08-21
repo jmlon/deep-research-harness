@@ -155,6 +155,65 @@ def critic_model(*, passed: bool = True, issues: Sequence[str] = (), follow_ups:
     )
 
 
+def writing_critic_model(*, issues: Sequence[str], pass_on_attempt: int | None = None) -> FunctionModel:
+    """A critic whose complaints are about the writing: it never proposes a follow-up.
+
+    This is the case the revision loop exists for — with no researchable follow-up, the only
+    remedy is rewriting the report against the issues. `pass_on_attempt` makes it accept that
+    attempt's draft (1-based); None means it is never satisfied.
+    """
+    calls = {"n": 0}
+
+    def respond(messages: list[object], info: AgentInfo) -> ModelResponse:
+        calls["n"] += 1
+        passed = pass_on_attempt is not None and calls["n"] >= pass_on_attempt
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "passed": passed,
+                        "issues": [] if passed else list(issues),
+                        "follow_up_subquestions": [],
+                        "reasoning": "reviewed",
+                    },
+                )
+            ]
+        )
+
+    model = FunctionModel(respond)
+    model.calls = calls  # type: ignore[attr-defined]
+    return model
+
+
+def recording_synthesis_model() -> FunctionModel:
+    """A synthesis model that records every prompt it is given, for revision-loop tests."""
+    calls: dict[str, list[str]] = {"prompts": []}
+
+    def respond(messages: list[object], info: AgentInfo) -> ModelResponse:
+        request = messages[0]
+        prompt = "".join(str(part.content) for part in request.parts if hasattr(part, "content"))
+        calls["prompts"].append(prompt)
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "question": "Q?",
+                        "summary": f"draft {len(calls['prompts'])}",
+                        "sections": [],
+                        "unresolved": [],
+                        "assumptions": [],
+                    },
+                )
+            ]
+        )
+
+    model = FunctionModel(respond)
+    model.calls = calls  # type: ignore[attr-defined]
+    return model
+
+
 def rejecting_critic_model(follow_up_prefix: str = "follow-up") -> FunctionModel:
     """A critic that never passes and always proposes a *new* follow-up.
 

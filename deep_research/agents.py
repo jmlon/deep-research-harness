@@ -169,6 +169,18 @@ SubFinding died with "Exceeded maximum output retries (1)". MCP tools are unaffe
 server's `max_tool_retries` config (default 3) overrides this agent-level default.
 """
 
+SYNTHESIS_REVISION_ADDENDUM = """\
+
+An independent reviewer rejected the previous draft of this report for the issues listed below. \
+Most such issues are findings content the draft left out — fix every issue that can be fixed \
+from the findings above. Do not invent claims beyond the findings to satisfy the reviewer: if an \
+issue asks for something the findings genuinely do not contain, leave it unfixed and it will be \
+reported as unresolved.
+
+Reviewer issues with the previous draft:
+{issues}
+"""
+
 CRITIQUE_PROMPT_TEMPLATE = """\
 Original research question: {question}
 
@@ -290,7 +302,7 @@ def render_gap_check_prompt(state: ResearchState) -> str:
     )
 
 
-def render_synthesis_prompt(state: ResearchState) -> str:
+def render_synthesis_prompt(state: ResearchState, critic_issues: Sequence[str] = ()) -> str:
     assumptions = "\n".join(f"- {a}" for a in state.brief.assumptions) or "(none)"
     # Both lists matter: `unresolved_subquestions` is everything a budget cut off, and
     # `open_subquestions` is anything still queued if synthesis is running early (a resumed
@@ -301,12 +313,20 @@ def render_synthesis_prompt(state: ResearchState) -> str:
         if question not in unresolved:
             unresolved.append(question)
     open_subquestions = "\n".join(f"- {q}" for q in unresolved) or "(none — everything was covered)"
-    return SYNTHESIS_PROMPT_TEMPLATE.format(
+    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
         question=state.brief.question,
         assumptions=assumptions,
         findings_summary=_findings_summary(state),
         open_subquestions=open_subquestions,
     )
+    # A failed critique feeds back into the rewrite, whichever path led here: after a critic-
+    # driven research round the issues say what the previous draft got wrong, and on a pure
+    # revision they are the entire reason the synthesis is running again. A real run shipped a
+    # 4KB draft that ignored most of its findings precisely because the re-synthesis prompt
+    # never told the model what the critic had objected to.
+    if critic_issues:
+        prompt += SYNTHESIS_REVISION_ADDENDUM.format(issues="\n".join(f"- {i}" for i in critic_issues))
+    return prompt
 
 
 def render_critique_prompt(state: ResearchState, report: ResearchReport) -> str:

@@ -161,8 +161,11 @@ free-form revision. From there the pipeline runs with no further input needed:
    its own work — reviews the draft against the brief and findings: is every claim source-backed,
    does the report cover every sub-question, were contradictions surfaced rather than papered
    over? If it finds a fixable gap, that becomes another research round (same budget as gap-check
-   above); if the budget runs out first, the report still ships, with the critic's remaining
-   issues listed under "Unresolved" rather than silently dropped.
+   above). If its issues are with the writing rather than the research — content the findings
+   hold but the draft left out — the report is rewritten against the critique instead (at most
+   twice, on the report allowance, not the research budget). If the budget runs out first, or
+   the critic is still unsatisfied after the rewrites, the report ships with the critic's
+   remaining issues listed under "Unresolved" rather than silently dropped.
 
 The report prints as rendered Markdown and is saved under `./reports/<timestamp>-<slug>.md` **in
 your project folder** — like `output.state_dir` below, `output.report_dir` in `config.yaml`
@@ -171,6 +174,11 @@ never relative to wherever the tool is installed.
 
 Per-run overrides (no need to edit the file): `--breadth-budget`, `--depth-budget`,
 `--spend-limit-usd`, `--config <path>`.
+
+A finished run can also be re-written without re-paying for its research:
+`deep-research resume --force <state-file>` re-runs synthesis and critique on the findings
+already checkpointed — see "Resuming an interrupted run" below.
+
 
 #### Budgets: where they live and how to size them
 
@@ -441,7 +449,17 @@ deep-research resume .deep_research/<file>.json --breadth-budget 16
 
 Resuming a run that is already complete with no outstanding work does nothing and costs nothing
 — it tells you what was skipped rather than paying for a second synthesis and critique of the
-same findings. Pass `--force` if you do want those re-run.
+same findings. Pass `--force` if you *do* want those re-run:
+
+```bash
+deep-research resume --force .deep_research/<file>.json
+```
+
+This rewrites the report from the findings already checkpointed, without re-researching
+anything — the research is the expensive part, so this is the cheap way to get a better
+write-up out of a run whose findings were fine but whose report wasn't. Typical occasions: you
+switched `model.lead` to a stronger model after a thin report, or upgraded the tool and want the
+current synthesis behavior applied to an old run's findings.
 
 ### Unattended runs (`--auto`)
 

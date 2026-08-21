@@ -18,15 +18,17 @@ from conftest import (
     critic_model,
     failing_worker_model,
     gap_check_model,
+    recording_synthesis_model,
     rejecting_critic_model,
     synthesis_model,
     worker_model,
+    writing_critic_model,
 )
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from deep_research.models import ResearchReport, ResearchState
-from deep_research.research import RunBudget
+from deep_research.research import MAX_REPORT_REVISIONS, RunBudget
 
 
 def unresolved_mentioning(report: ResearchReport, needle: str) -> bool:
@@ -119,17 +121,62 @@ def test_a_sub_question_that_later_succeeds_stops_being_reported_as_a_gap(brief:
     assert report.unresolved == []
 
 
+# --- critic-driven report revision (writing problems, not research gaps) -----------------
+
+def test_writing_issues_trigger_a_revision_with_the_critique_in_the_prompt(brief: BriefFactory, run_pipeline: PipelineRunner) -> None:
+    """A real run shipped a 4KB draft ignoring most of its findings: the critic's issues were
+    all writing problems, it proposed no follow-ups, and the loop's only remedy was more
+    research. A rewrite pass must happen instead — and it must actually see the critique.
+    """
+    synthesis = recording_synthesis_model()
+    critic = writing_critic_model(issues=["the draft omits the tools finding"], pass_on_attempt=2)
+    state, report, _ = run_pipeline(brief(subquestions=["a"]), synthesis=synthesis, critic=critic)
+
+    assert state.critic_passed is True
+    assert len(synthesis.calls["prompts"]) == 2, "initial draft, then exactly one revision"
+    assert "the draft omits the tools finding" in synthesis.calls["prompts"][1]
+    assert "the draft omits the tools finding" not in synthesis.calls["prompts"][0]
+    assert not unresolved_mentioning(report, "omits the tools finding"), (
+        "an issue the revision fixed must not survive into the report"
+    )
+
+
+def test_revisions_are_bounded_and_a_still_failing_draft_ships_with_issues_noted(brief: BriefFactory, run_pipeline: PipelineRunner) -> None:
+    """A synthesis model and a critic can genuinely disagree; ping-ponging drafts between them
+    would burn the report allowance without converging.
+    """
+    synthesis = recording_synthesis_model()
+    critic = writing_critic_model(issues=["never good enough"])
+    state, report, _ = run_pipeline(brief(subquestions=["a"]), synthesis=synthesis, critic=critic)
+
+    assert state.status == "done"
+    assert len(synthesis.calls["prompts"]) == 1 + MAX_REPORT_REVISIONS
+    assert critic.calls["n"] == 1 + MAX_REPORT_REVISIONS, "every revision is re-critiqued"
+    assert state.critic_passed is False
+    assert unresolved_mentioning(report, "never good enough"), (
+        "an unfixed writing issue must survive into the report"
+    )
+
+
 # --- termination and budgets ------------------------------------------------------------
 
 def test_a_critic_that_never_passes_still_terminates(brief: BriefFactory, run_pipeline: PipelineRunner) -> None:
-    """PRD §10: "bounded by depth_budget so critique can't loop forever"."""
+    """PRD §10: "bounded by depth_budget so critique can't loop forever".
+
+    Two bounds now compose: research rounds are capped by `depth_budget`, and once those are
+    spent the loop gets `MAX_REPORT_REVISIONS` rewrite-only passes before shipping. Each pass
+    of either kind ends in exactly one critique, plus the initial one.
+    """
     critic = rejecting_critic_model()
     state, report, _ = run_pipeline(
         brief(subquestions=["a", "b"], depth_budget=2, breadth_budget=6), critic=critic
     )
 
     assert state.status == "done"
-    assert critic.calls["n"] == 3, "one critique per write-up pass, bounded by depth_budget"
+    assert critic.calls["n"] == 1 + 2 + MAX_REPORT_REVISIONS, (
+        "one critique per write-up pass: the initial draft, one per depth_budget research "
+        "round, one per rewrite-only revision"
+    )
     assert report.unresolved, "an unsatisfied critic's issues must survive into the report"
 
 
